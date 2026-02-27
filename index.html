@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>RDS Log Explorer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
+
+        :root {
+            font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+            color: #f4f3ef;
+            background-color: #030712;
+            --card: rgba(6, 10, 20, 0.92);
+            --border: rgba(255, 255, 255, 0.12);
+            --muted: rgba(244, 243, 239, 0.78);
+            --primary: #10b981;
+            --accent: #f97316;
+            --ghost: rgba(255, 255, 255, 0.08);
+            --danger: #f43f5e;
+            color-scheme: dark;
+        }
+
+        * { box-sizing: border-box; }
+
+        /* Accessibility & Scrollbars */
+        :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 2px; }
+        
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 18% 25%, rgba(16, 185, 129, 0.15), transparent 55%),
+                radial-gradient(circle at 82% 0%, rgba(249, 115, 22, 0.15), transparent 45%),
+                #030712;
+            color: var(--muted);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: clamp(1rem, 4vw, 3rem);
+        }
+
+        main.shell {
+            width: min(1200px, 100%);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: clamp(1.5rem, 3vw, 2.8rem);
+            box-shadow: 0 25px 65px rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(24px);
+            animation: fadeIn 320ms ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero { margin-bottom: 1.5rem; }
+        .eyebrow { text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.7rem; color: rgba(244, 243, 239, 0.65); margin: 0 0 0.6rem; }
+        h1 { margin: 0; font-size: clamp(1.9rem, 5vw, 2.8rem); letter-spacing: -0.02em; color: #fefcf5; }
+        .lede { margin: 0.8rem 0 0; max-width: 680px; line-height: 1.5; }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            padding: 0.85rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.02);
+            transition: background 0.2s;
+        }
+        .field:focus-within { background: rgba(255, 255, 255, 0.04); }
+
+        .field span { font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(244, 243, 239, 0.6); }
+
+        .field input, .field select {
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.2);
+            color: inherit;
+            padding: 0.6rem 0.8rem;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 160ms ease, background 160ms ease;
+        }
+        
+        .field input:disabled, .field select:disabled { opacity: 0.5; cursor: not-allowed; }
+        .field input:focus, .field select:focus { border-color: rgba(16, 185, 129, 0.65); background: rgba(0, 0, 0, 0.35); }
+
+        .field-input-wrap { display: flex; align-items: center; gap: 0.45rem; }
+        .field-input-wrap input { flex: 1; min-width: 0; }
+
+        .mini-btn {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.08);
+            color: #fefefe;
+            border-radius: 999px;
+            padding: 0.4rem 0.9rem;
+            font-size: 0.75rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mini-btn:hover:not(:disabled) { border-color: rgba(16, 185, 129, 0.65); background: rgba(16, 185, 129, 0.1); }
+
+        .range-buttons { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+        .range-buttons span { font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(244, 243, 239, 0.65); }
+        .range-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .chip-btn {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fefefe;
+            border-radius: 999px;
+            padding: 0.35rem 0.95rem;
+            font-size: 0.8rem;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            transition: all 140ms ease;
+        }
+        .chip-btn:hover:not(:disabled) { border-color: rgba(16, 185, 129, 0.65); background: rgba(16, 185, 129, 0.1); }
+
+        .month-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.9rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+        .month-box input[type="number"] {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fefefe;
+            border-radius: 10px;
+            padding: 0.3rem 0.6rem;
+            width: 70px;
+            font-size: 0.85rem;
+        }
+
+        .action-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; }
+
+        button.primary, button.accent, button.ghost {
+            border: none;
+            border-radius: 999px;
+            padding: 0.65rem 1.4rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            font-size: 0.95rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+        button.primary { background: linear-gradient(120deg, var(--primary), #0ea5e9); color: #031014; box-shadow: 0 10px 25px rgba(16, 185, 129, 0.35); }
+        button.primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(16, 185, 129, 0.45); }
+        button.ghost { background: var(--ghost); color: #fefefe; }
+        button.ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+        button.accent { background: radial-gradient(circle at 30% 30%, #fed7aa, #f97316); color: #1f1306; box-shadow: 0 12px 30px rgba(249, 115, 22, 0.35); }
+
+        .spinner { animation: spin 1s linear infinite; width: 1.15rem; height: 1.15rem; margin-right: 0.5rem; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Modern Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 100;
+            border-radius: 16px;
+            padding: 1rem 1.5rem;
+            background: rgba(12, 18, 30, 0.95);
+            border: 1px solid var(--border);
+            color: #fefefe;
+            font-size: 0.92rem;
+            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            transform: translateY(150%);
+            opacity: 0;
+            visibility: hidden;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease, visibility 0.35s;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; visibility: visible; }
+        .toast.error { border-color: rgba(244, 63, 94, 0.6); color: var(--danger); }
+
+        .summary {
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 1.1rem;
+            margin-bottom: 1.2rem;
+            background: rgba(255, 255, 255, 0.01);
+        }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.9rem; }
+        .summary-item { padding: 0.8rem 0.9rem; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .summary-item span.label { text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.18em; color: rgba(244, 243, 239, 0.65); }
+        .summary-item span.value { display: block; margin-top: 0.4rem; font-size: 1.3rem; color: #fefefe; font-variant-numeric: tabular-nums; }
+
+        .chart-card {
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 1.2rem;
+            background: rgba(5, 9, 18, 0.92);
+            margin-bottom: 1.2rem;
+        }
+        .chart-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.2rem; flex-wrap: wrap; }
+        .chart-header h2 { margin: 0.1rem 0 0; font-size: 1.15rem; color: #fefefe; }
+        .chart-subtitle { margin: 0; font-size: 0.75rem; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(244, 243, 239, 0.6); }
+
+        .chart-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+        .chart-field-summary { display: flex; flex-direction: column; gap: 0.35rem; }
+        .chart-field-summary span { font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(244, 243, 239, 0.65); }
+        .chart-field-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+        .chart-field-label { margin: 0; font-size: 0.85rem; color: rgba(244, 243, 239, 0.78); }
+        .chart-status { margin: 0.8rem 0 1rem; font-size: 0.85rem; color: rgba(244, 243, 239, 0.75); }
+        .chart-canvas-wrap { position: relative; min-height: 320px; }
+
+        /* Native Dialog styling */
+        dialog.field-modal {
+            padding: 0;
+            border: none;
+            background: transparent;
+            margin: auto;
+            max-width: min(720px, 95vw);
+            width: 100%;
+        }
+        dialog.field-modal::backdrop {
+            background: rgba(3, 7, 18, 0.8);
+            backdrop-filter: blur(8px);
+        }
+
+        .field-modal__sheet {
+            background: rgba(4, 11, 22, 0.98);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+            padding: 1.6rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+
+        .field-modal__header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+        .field-modal__header h3 { margin: 0; font-size: 1.2rem; color: #fefefe; }
+        .field-modal__intro { margin: 0; font-size: 0.9rem; color: rgba(244, 243, 239, 0.75); line-height: 1.4; }
+
+        .field-modal__search { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+        .field-modal__search input {
+            flex: 1;
+            min-width: 220px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(0, 0, 0, 0.35);
+            color: inherit;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.95rem;
+            outline: none;
+        }
+        .field-modal__search input:focus { border-color: var(--primary); }
+
+        .field-modal__list {
+            max-height: 40vh;
+            min-height: 200px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 0.8rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 0.5rem;
+            background: rgba(2, 6, 23, 0.65);
+            align-content: start;
+        }
+
+        .field-modal__item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.6rem 0.8rem;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            background: rgba(255, 255, 255, 0.02);
+            transition: all 0.2s;
+        }
+        .field-modal__item:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1); }
+        .field-modal__item.active { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); }
+
+        .field-modal__item label { display: flex; align-items: center; gap: 0.6rem; flex: 1; cursor: pointer; }
+        .field-modal__item input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer; }
+        .field-modal__item span { font-size: 0.9rem; color: #fefefe; word-break: break-all; }
+        .field-modal__item em { font-style: normal; font-size: 0.75rem; color: rgba(244, 243, 239, 0.6); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+        .field-modal__empty { grid-column: 1 / -1; text-align: center; padding: 2rem; color: rgba(244, 243, 239, 0.5); }
+        .field-modal__footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1.2rem; }
+        .field-modal__footer-text { font-size: 0.85rem; color: rgba(244, 243, 239, 0.6); }
+        .field-modal__actions { display: flex; gap: 0.6rem; }
+
+        .table-card { border: 1px solid var(--border); border-radius: 24px; padding: 1.2rem; background: rgba(5, 9, 18, 0.9); }
+        .table-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+        .table-header h2 { margin: 0; font-size: 1.15rem; color: #fefefe; }
+        .table-header input {
+            flex: 1;
+            max-width: 400px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.04);
+            color: inherit;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .table-header input:focus { border-color: var(--primary); }
+
+        .table-wrapper { max-height: 380px; overflow: auto; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.06); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        thead { background: rgba(20, 25, 35, 0.95); position: sticky; top: 0; backdrop-filter: blur(12px); z-index: 10; }
+        th { font-weight: 600; color: rgba(244, 243, 239, 0.8); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+        tbody tr { cursor: pointer; transition: background 120ms ease; }
+        tbody tr:hover { background: rgba(16, 185, 129, 0.05); }
+        tbody tr.selected { background: rgba(16, 185, 129, 0.15); border-left: 3px solid var(--primary); }
+
+        .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; padding: 0.5rem 0.5rem 0; }
+        .pagination span { font-size: 0.85rem; letter-spacing: 0.05em; color: rgba(244, 243, 239, 0.7); }
+
+        .preview-pane { margin-top: 1rem; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(0, 0, 0, 0.25); padding: 1.2rem; font-size: 0.85rem; max-height: 280px; overflow: auto; }
+        pre { margin: 0; font-family: 'JetBrains Mono', 'Courier New', monospace; white-space: pre-wrap; word-break: break-word; color: #e2e8f0; }
+
+        .hidden { display: none !important; }
+
+        @media (max-width: 720px) {
+            .action-row { flex-direction: column; }
+            button { width: 100%; }
+            .table-header { flex-direction: column; align-items: stretch; }
+            .table-header input { max-width: 100%; }
+            .field-modal__list { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header class="hero">
+        <p class="eyebrow">BMS Telemetry • RDS Browser Parser</p>
+        <h1>RDS Log Explorer</h1>
+        <p class="lede">Query RDS JSON payloads via the Lambda endpoint, narrow by thing name and date range,
+            and inspect every payload locally without waiting for server-side CSV conversions.</p>
+    </header>
+
+    <section class="control-grid">
+        <label class="field">
+            <span>Thing name</span>
+            <input id="thing-name" type="text" placeholder="e.g. bms-001">
+        </label>
+        <label class="field">
+            <span>From (local time)</span>
+            <div class="field-input-wrap">
+                <input id="from-datetime" type="datetime-local">
+                <button type="button" class="mini-btn" data-now-target="from">Now</button>
+            </div>
+        </label>
+        <label class="field">
+            <span>To (local time)</span>
+            <div class="field-input-wrap">
+                <input id="to-datetime" type="datetime-local">
+                <button type="button" class="mini-btn" data-now-target="to">Now</button>
+            </div>
+        </label>
+    </section>
+
+    <div class="range-buttons">
+        <span>Quick Range</span>
+        <button type="button" class="chip-btn" data-range-minutes="15">15 min</button>
+        <button type="button" class="chip-btn" data-range-minutes="60">1 hr</button>
+        <button type="button" class="chip-btn" data-range-minutes="360">6 hr</button>
+        <button type="button" class="chip-btn" data-range-minutes="720">12 hr</button>
+        <button type="button" class="chip-btn" data-range-minutes="4320">3 day</button>
+        <button type="button" class="chip-btn" data-range-minutes="10080">7 day</button>
+        <div class="month-box">
+            <span style="font-size: 0.7rem; margin-right: 0.2rem;">Month</span>
+            <input id="month-count" type="number" min="1" max="12" value="1" step="1" aria-label="Number of months">
+            <button type="button" class="chip-btn" data-range-months="month-count" style="margin-left: 0.3rem;">Apply</button>
+        </div>
+    </div>
+
+    <div class="action-row">
+        <button id="fetch-btn" type="button" class="primary">Fetch &amp; Parse Logs</button>
+        <button id="download-btn" type="button" class="accent" disabled>Download Latest File</button>
+        <button id="csv-btn" type="button" class="ghost" disabled>Download CSV</button>
+    </div>
+
+    <section id="summary-card" class="summary hidden">
+        <div class="summary-grid">
+            <div class="summary-item">
+                <span class="label">Total Records</span>
+                <span class="value" id="summary-count">0</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Filtered Matches</span>
+                <span class="value" id="summary-filtered">0</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Time Range</span>
+                <span class="value" id="summary-range" style="font-size: 1rem;">—</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Raw Size</span>
+                <span class="value" id="summary-size">—</span>
+            </div>
+        </div>
+    </section>
+
+    <section id="chart-card" class="chart-card hidden">
+        <div class="chart-header">
+            <div>
+                <p class="chart-subtitle">Interactive Telemetry</p>
+                <h2>Field Grapher</h2>
+            </div>
+            <div class="chart-controls">
+                <div class="chart-field-summary">
+                    <span>Active Signals</span>
+                    <div class="chart-field-actions">
+                        <button id="chart-field-trigger" type="button" class="chip-btn" disabled>Configure Fields</button>
+                        <p id="chart-field-label" class="chart-field-label">No fields detected yet.</p>
+                    </div>
+                </div>
+                <button id="chart-reset-btn" type="button" class="mini-btn" disabled>Reset View</button>
+            </div>
+        </div>
+        <p id="chart-status" class="chart-status">Fetch a dataset to populate this graph.</p>
+        <div class="chart-canvas-wrap">
+            <canvas id="chart-canvas" aria-label="Numeric telemetry chart"></canvas>
+        </div>
+    </section>
+
+    <dialog id="field-modal" class="field-modal" aria-labelledby="field-modal-title">
+        <div class="field-modal__sheet">
+            <div class="field-modal__header">
+                <div>
+                    <p class="chart-subtitle">Telemetry Configuration</p>
+                    <h3 id="field-modal-title">Plot Numeric Keys</h3>
+                </div>
+                <button id="field-modal-close" type="button" class="mini-btn" aria-label="Close modal">✕</button>
+            </div>
+            <p class="field-modal__intro">Select the data points you want to visualize on the timeline. Only keys containing numeric data are shown.</p>
+            <div class="field-modal__search">
+                <input id="field-modal-search" type="search" placeholder="Search paths (e.g. pack.voltage)">
+                <button type="button" class="chip-btn" id="field-modal-select-all">Select All</button>
+                <button type="button" class="chip-btn" id="field-modal-select-none">Clear All</button>
+            </div>
+            <div id="field-modal-list" class="field-modal__list" role="listbox" aria-multiselectable="true"></div>
+            <div class="field-modal__footer">
+                <span class="field-modal__footer-text" id="field-modal-counter">0 selected</span>
+                <div class="field-modal__actions">
+                    <button type="button" class="ghost" id="field-modal-cancel">Cancel</button>
+                    <button type="button" class="primary" id="field-modal-apply">Apply Selection</button>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <section id="table-card" class="table-card hidden">
+        <div class="table-header">
+            <h2>Parsed Records</h2>
+            <input id="table-filter" type="search" placeholder="Filter payloads (e.g. voltage>4.1)">
+        </div>
+        <div class="table-wrapper">
+            <table id="records-table">
+                <thead>
+                <tr>
+                    <th style="width: 60px;">#</th>
+                    <th style="width: 200px;">Timestamp</th>
+                    <th>Data Preview</th>
+                </tr>
+                </thead>
+                <tbody id="records-body">
+                <tr><td colspan="3">No data loaded yet.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="pagination hidden" id="pagination-controls">
+            <button id="page-prev" class="ghost mini-btn" disabled>Previous</button>
+            <span id="page-info">Page 1 of 1</span>
+            <button id="page-next" class="ghost mini-btn" disabled>Next</button>
+        </div>
+        <div class="preview-pane">
+            <pre id="record-preview">// Select a row to inspect its full JSON payload</pre>
+        </div>
+    </section>
+</main>
+
+<div id="status" class="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" crossorigin="anonymous"></script>
+
+<script>
+(() => {
+    const CONFIG = {
+        DEFAULT_ENDPOINT: 'https://bb346ujgqt5itteewelgjppx4q0numcp.lambda-url.ap-south-1.on.aws/'
+    };
+
+    const TABLE_COLUMN_COUNT = 3;
+    const COLOR_PALETTE = ['#10b981', '#0ea5e9', '#f97316', '#c084fc', '#f43f5e', '#a3e635', '#facc15', '#38bdf8'];
+    const TIMESTAMP_KEYS = ['received_at', 'timestamp', 'Timestamp', 'time', 'Time', 'ts', 'Ts', 'collected_at', 'collectedAt', 'created_at', 'createdAt'];
+    const TIMESTAMP_KEY_PATTERN = /(received_at|timestamp|time|ts)$/i;
+    
+    const state = {
+        records: [],
+        indexes: [],
+        rawText: '',
+        lastHeaders: {},
+        blobUrl: null,
+        csvUrl: null,
+        activeRecordIndex: -1,
+        flatRecords: [],
+        chartFields: [],
+        chartInstance: null,
+        availableFields: [],
+        currentPage: 1,
+        pageSize: 50
+    };
+
+    let modalSelection = new Set();
+    let filterTimer = null;
+    let toastTimeout = null;
+
+    const dom = {
+        thingInput: document.getElementById('thing-name'),
+        fromInput: document.getElementById('from-datetime'),
+        toInput: document.getElementById('to-datetime'),
+        nowButtons: document.querySelectorAll('[data-now-target]'),
+        rangeButtons: document.querySelectorAll('[data-range-minutes]'),
+        monthInput: document.getElementById('month-count'),
+        monthButton: document.querySelector('[data-range-months]'),
+        fetchBtn: document.getElementById('fetch-btn'),
+        downloadBtn: document.getElementById('download-btn'),
+        csvBtn: document.getElementById('csv-btn'),
+        status: document.getElementById('status'),
+        summaryCard: document.getElementById('summary-card'),
+        summaryCount: document.getElementById('summary-count'),
+        summaryFiltered: document.getElementById('summary-filtered'),
+        summaryRange: document.getElementById('summary-range'),
+        summarySize: document.getElementById('summary-size'),
+        tableCard: document.getElementById('table-card'),
+        tableBody: document.getElementById('records-body'),
+        tableFilter: document.getElementById('table-filter'),
+        paginationControls: document.getElementById('pagination-controls'),
+        pagePrev: document.getElementById('page-prev'),
+        pageNext: document.getElementById('page-next'),
+        pageInfo: document.getElementById('page-info'),
+        preview: document.getElementById('record-preview'),
+        chartCard: document.getElementById('chart-card'),
+        chartStatus: document.getElementById('chart-status'),
+        chartCanvas: document.getElementById('chart-canvas'),
+        chartReset: document.getElementById('chart-reset-btn'),
+        chartFieldTrigger: document.getElementById('chart-field-trigger'),
+        chartFieldLabel: document.getElementById('chart-field-label'),
+        
+        // Native Dialog
+        fieldModal: document.getElementById('field-modal'),
+        fieldModalList: document.getElementById('field-modal-list'),
+        fieldModalSearch: document.getElementById('field-modal-search'),
+        fieldModalApply: document.getElementById('field-modal-apply'),
+        fieldModalCancel: document.getElementById('field-modal-cancel'),
+        fieldModalClose: document.getElementById('field-modal-close'),
+        fieldModalSelectAll: document.getElementById('field-modal-select-all'),
+        fieldModalSelectNone: document.getElementById('field-modal-select-none'),
+        fieldModalCounter: document.getElementById('field-modal-counter'),
+    };
+
+    function init() {
+        setDefaultDates();
+        resetData(true);
+        registerChartPlugins();
+        
+        dom.nowButtons.forEach(btn => btn.addEventListener('click', handleNowClick));
+        dom.rangeButtons.forEach(btn => btn.addEventListener('click', handleRangeClick));
+        dom.monthButton?.addEventListener('click', handleMonthRangeClick);
+        dom.fetchBtn.addEventListener('click', fetchLogs);
+        dom.downloadBtn.addEventListener('click', downloadRawFile);
+        dom.csvBtn.addEventListener('click', downloadCsv);
+        
+        // Increased debounce for text filter logic optimization
+        dom.tableFilter.addEventListener('input', () => {
+            window.clearTimeout(filterTimer);
+            filterTimer = window.setTimeout(applyFilter, 300);
+        });
+        
+        dom.tableBody.addEventListener('click', handleRowClick);
+        dom.pagePrev?.addEventListener('click', () => handlePagination(-1));
+        dom.pageNext?.addEventListener('click', () => handlePagination(1));
+
+        dom.chartFieldTrigger?.addEventListener('click', openFieldModal);
+        dom.chartReset?.addEventListener('click', handleChartReset);
+        
+        dom.fieldModalClose?.addEventListener('click', closeFieldModal);
+        dom.fieldModalCancel?.addEventListener('click', closeFieldModal);
+        dom.fieldModalApply?.addEventListener('click', handleModalApply);
+        dom.fieldModalList?.addEventListener('change', handleModalCheckboxChange);
+        dom.fieldModalSearch?.addEventListener('input', handleModalSearch);
+        dom.fieldModalSelectAll?.addEventListener('click', handleSelectAllFields);
+        dom.fieldModalSelectNone?.addEventListener('click', handleSelectNoneFields);
+        
+        // Native dialog backdrop click close support
+        dom.fieldModal?.addEventListener('click', (e) => {
+            if (e.target === dom.fieldModal) closeFieldModal();
+        });
+
+        setStatus('Ready. Enter a thing name and date range.', false, 4000);
+    }
+
+    // --- Date Utilities ---
+    function handleNowClick(event) {
+        const target = event.currentTarget?.dataset?.nowTarget;
+        if (!target) return;
+        const now = new Date();
+        const value = toLocalInput(now);
+        if (target === 'from') dom.fromInput.value = value;
+        else if (target === 'to') dom.toInput.value = value;
+    }
+
+    function handleRangeClick(event) {
+        const minutes = Number(event.currentTarget?.dataset?.rangeMinutes);
+        if (!minutes || minutes <= 0) return;
+        const now = new Date();
+        const from = new Date(now.getTime() - minutes * 60 * 1000);
+        dom.toInput.value = toLocalInput(now);
+        dom.fromInput.value = toLocalInput(from);
+        setStatus(`Range set to ${event.currentTarget.textContent.trim()}.`, false, 3000);
+    }
+
+    function handleMonthRangeClick() {
+        if (!dom.monthInput) return;
+        const months = Number(dom.monthInput.value);
+        if (!months || months <= 0) return setStatus('Enter a positive month count.', true);
+        const now = new Date();
+        const from = new Date(now);
+        from.setMonth(from.getMonth() - months);
+        dom.toInput.value = toLocalInput(now);
+        dom.fromInput.value = toLocalInput(from);
+        setStatus(`Range set to last ${months} month(s).`, false, 3000);
+    }
+
+    function setDefaultDates() {
+        const now = new Date();
+        const back = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+        dom.fromInput.value = toLocalInput(back);
+        dom.toInput.value = toLocalInput(now);
+    }
+
+    function toLocalInput(date) {
+        const pad = (val) => String(val).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    // --- UI/UX Helpers ---
+    function setStatus(message, isError = false, duration = 5000) {
+        dom.status.textContent = message;
+        dom.status.classList.toggle('error', Boolean(isError));
+        dom.status.classList.add('show');
+        clearTimeout(toastTimeout);
+        if (duration > 0) {
+            toastTimeout = setTimeout(() => dom.status.classList.remove('show'), duration);
+        }
+    }
+
+    function toggleButton(button, isBusy, busyLabel) {
+        const svgSpinner = `<svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+        button.disabled = isBusy;
+        if (isBusy) {
+            button.dataset.originalLabel = button.dataset.originalLabel || button.textContent;
+            button.innerHTML = `${svgSpinner}${busyLabel || 'Processing...'}`;
+        } else if (button.dataset.originalLabel) {
+            button.textContent = button.dataset.originalLabel;
+        }
+    }
+
+    function setInputsDisabled(disabled) {
+        [dom.thingInput, dom.fromInput, dom.toInput, dom.monthInput, dom.tableFilter]
+            .forEach(el => el && (el.disabled = disabled));
+        dom.nowButtons.forEach(btn => btn.disabled = disabled);
+        dom.rangeButtons.forEach(btn => btn.disabled = disabled);
+        if (dom.monthButton) dom.monthButton.disabled = disabled;
+    }
+
+    // --- API & Data Handling ---
+    async function fetchLogs() {
+        if (!CONFIG.DEFAULT_ENDPOINT) return setStatus('No API endpoint configured.', true);
+        
+        let payload;
+        try {
+            const thingName = dom.thingInput?.value?.trim();
+            if (!thingName) throw new Error('Provide a thing name.');
+            const fromIso = toIso(dom.fromInput.value);
+            const toIsoVal = toIso(dom.toInput.value);
+            if (!fromIso || !toIsoVal) throw new Error('Provide a valid date range.');
+            
+            const toDateWithPadding = new Date(toIsoVal);
+            toDateWithPadding.setHours(toDateWithPadding.getHours() + 1);
+            
+            payload = { thing_name: thingName, from_datetime: fromIso, to_datetime: toDateWithPadding.toISOString() };
+        } catch (err) {
+            return setStatus(err.message, true);
+        }
+        
+        toggleButton(dom.fetchBtn, true, 'Fetching…');
+        setInputsDisabled(true);
+        setStatus('Fetching NDJSON from RDS Lambda…', false, 0);
+
+        try {
+            const response = await fetch(CONFIG.DEFAULT_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson, application/json' },
+                body: JSON.stringify(payload),
+            });
+            
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            if (!response.ok || (contentType.includes('application/json') && !contentType.includes('ndjson'))) {
+                const errBody = await response.json().catch(() => ({}));
+                throw new Error(errBody.error || `Request failed (${response.status})`);
+            }
+            
+            ingestNdjson(await response.text(), response.headers);
+        } catch (error) {
+            setStatus(error.message || 'Failed to fetch logs.', true);
+        } finally {
+            toggleButton(dom.fetchBtn, false);
+            setInputsDisabled(false);
+        }
+    }
+
+    function toIso(value) {
+        if (!value) return null;
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+
+    function ingestNdjson(text, headers) {
+        state.rawText = text;
+        if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
+        if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
+        state.blobUrl = state.csvUrl = null;
+        
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        const parsed = [];
+        let skipped = 0;
+        
+        // Fast iteration
+        for (let i = 0; i < lines.length; i++) {
+            try { parsed.push(JSON.parse(lines[i])); } 
+            catch { skipped++; }
+        }
+        
+        state.records = parsed;
+        state.flatRecords = parsed.map(flattenRecord);
+        state.chartFields = [];
+        state.availableFields = [];
+        if (dom.chartFieldTrigger) dom.chartFieldTrigger.disabled = true;
+        updateFieldSummary();
+        
+        state.indexes = parsed.map((_, idx) => idx);
+        state.activeRecordIndex = state.indexes.length ? state.indexes[0] : -1;
+        state.currentPage = 1;
+
+        state.lastHeaders = {
+            from: headers.get('x-from') || '',
+            to: headers.get('x-to') || '',
+            filename: parseFilename(headers.get('content-disposition')) || 'rds_export.jsonl',
+        };
+        
+        const hasData = parsed.length > 0;
+        dom.summaryCard.classList.toggle('hidden', !hasData);
+        dom.tableCard.classList.toggle('hidden', !hasData);
+        dom.downloadBtn.disabled = dom.csvBtn.disabled = !hasData;
+        
+        applyFilter(true);
+        updatePreview();
+        
+        const summaryText = hasData ? `Fetched ${parsed.length} records.` : 'No records found.';
+        setStatus(summaryText, !hasData);
+        if (skipped > 0) setStatus(`${summaryText} Skipped ${skipped} malformed line(s).`, true);
+    }
+
+    // --- Table & Rendering Optimizations ---
+    function applyFilter(skipStatus = false) {
+        const term = dom.tableFilter.value.trim().toLowerCase();
+        
+        if (!term) {
+            state.indexes = state.records.map((_, idx) => idx);
+        } else {
+            // Optimized array reduction
+            const filtered = [];
+            for (let i = 0; i < state.records.length; i++) {
+                if (JSON.stringify(state.records[i]).toLowerCase().includes(term)) {
+                    filtered.push(i);
+                }
+            }
+            state.indexes = filtered;
+        }
+        
+        state.activeRecordIndex = state.indexes.length ? state.indexes[0] : -1;
+        state.currentPage = 1;
+        dom.csvBtn.disabled = !state.indexes.length;
+        
+        renderSummary();
+        renderTable();
+        updatePreview();
+        refreshChart();
+        
+        if (!skipStatus && term) setStatus(`Showing ${state.indexes.length} record(s).`, false, 2000);
+    }
+
+    function renderSummary() {
+        dom.summaryCount.textContent = state.records.length.toLocaleString();
+        dom.summaryFiltered.textContent = state.indexes.length.toLocaleString();
+        dom.summaryRange.textContent = state.lastHeaders.from && state.lastHeaders.to ? `${state.lastHeaders.from} → ${state.lastHeaders.to}` : '—';
+        dom.summarySize.textContent = state.rawText ? `${(new Blob([state.rawText]).size / 1024).toFixed(1)} KB` : '—';
+    }
+
+    function renderTable() {
+        if (!state.indexes.length) {
+            dom.tableBody.innerHTML = `<tr><td colspan="${TABLE_COLUMN_COUNT}">No records match filter.</td></tr>`;
+            dom.paginationControls?.classList.add('hidden');
+            return;
+        }
+
+        dom.paginationControls?.classList.remove('hidden');
+        const startIdx = (state.currentPage - 1) * state.pageSize;
+        const pageIndexes = state.indexes.slice(startIdx, startIdx + state.pageSize);
+
+        // String concatenation is generally faster than DOM creation loop for large innerHTML
+        let htmlBuffer = '';
+        for(let i=0; i<pageIndexes.length; i++) {
+            const idx = pageIndexes[i];
+            const record = state.records[idx];
+            const ts = record?.received_at || record?.timestamp || record?.ts || '—';
+            const payloadStr = JSON.stringify(record?.payload ?? record?.Data ?? record ?? {});
+            const preview = payloadStr.length > 120 ? payloadStr.substring(0, 120) + '…' : payloadStr;
+            const selectedClass = idx === state.activeRecordIndex ? ' class="selected"' : '';
+            
+            htmlBuffer += `<tr data-record-index="${idx}"${selectedClass}>
+                <td>${idx + 1}</td>
+                <td style="white-space:nowrap;">${ts}</td>
+                <td style="font-family: monospace; font-size: 0.8rem; opacity: 0.8;">${escapeHtml(preview)}</td>
+            </tr>`;
+        }
+        
+        dom.tableBody.innerHTML = htmlBuffer;
+        renderPagination();
+    }
+
+    function renderPagination() {
+        const totalPages = Math.ceil(state.indexes.length / state.pageSize) || 1;
+        dom.pageInfo.textContent = `Page ${state.currentPage} of ${totalPages}`;
+        dom.pagePrev.disabled = state.currentPage === 1;
+        dom.pageNext.disabled = state.currentPage === totalPages;
+    }
+
+    function handlePagination(direction) {
+        const next = state.currentPage + direction;
+        if (next >= 1 && next <= Math.ceil(state.indexes.length / state.pageSize)) {
+            state.currentPage = next;
+            renderTable();
+        }
+    }
+
+    function handleRowClick(event) {
+        const row = event.target.closest('tr[data-record-index]');
+        if (!row) return;
+        state.activeRecordIndex = Number(row.dataset.recordIndex);
+        
+        // Optimize highlight change without re-rendering entire table
+        dom.tableBody.querySelectorAll('tr.selected').forEach(el => el.classList.remove('selected'));
+        row.classList.add('selected');
+        
+        updatePreview();
+    }
+
+    function updatePreview() {
+        dom.preview.textContent = state.activeRecordIndex >= 0 
+            ? JSON.stringify(state.records[state.activeRecordIndex], null, 2)
+            : '// Select a row to inspect payload';
+    }
+
+    // --- Modal Configuration Optimizations ---
+    function openFieldModal() {
+        if (!dom.fieldModal || !state.availableFields.length) return;
+        modalSelection = new Set(state.chartFields);
+        if (dom.fieldModalSearch) dom.fieldModalSearch.value = '';
+        renderFieldModalList('');
+        updateModalCounter();
+        dom.fieldModal.showModal(); // Native Dialog API
+    }
+
+    function closeFieldModal() {
+        if (!dom.fieldModal) return;
+        dom.fieldModal.close(); // Native Dialog API
+        modalSelection.clear();
+    }
+
+    function handleModalApply() {
+        state.chartFields = sortFieldsByAvailability(Array.from(modalSelection));
+        updateFieldSummary();
+        renderChartDatasets();
+        closeFieldModal();
+    }
+
+    function handleModalCheckboxChange(event) {
+        const input = event.target;
+        if (!input || input.type !== 'checkbox') return;
+        if (input.checked) {
+            modalSelection.add(input.value);
+            input.closest('.field-modal__item').classList.add('active');
+        } else {
+            modalSelection.delete(input.value);
+            input.closest('.field-modal__item').classList.remove('active');
+        }
+        updateModalCounter();
+    }
+
+    function handleModalSearch(event) {
+        renderFieldModalList(event.target.value || '');
+    }
+
+    function handleSelectAllFields() {
+        if (!state.availableFields.length) return;
+        modalSelection = new Set(state.availableFields.map(e => e.key));
+        renderFieldModalList(dom.fieldModalSearch?.value || '');
+        updateModalCounter();
+    }
+
+    function handleSelectNoneFields() {
+        modalSelection.clear();
+        renderFieldModalList(dom.fieldModalSearch?.value || '');
+        updateModalCounter();
+    }
+
+    function updateModalCounter() {
+        if (dom.fieldModalCounter) {
+            dom.fieldModalCounter.textContent = `${modalSelection.size} selected`;
+        }
+    }
+
+    function renderFieldModalList(filterValue = '') {
+        if (!dom.fieldModalList) return;
+        const term = filterValue.trim().toLowerCase();
+        
+        let htmlBuffer = '';
+        let matchCount = 0;
+
+        for(let i=0; i<state.availableFields.length; i++) {
+            const entry = state.availableFields[i];
+            if(entry.key.toLowerCase().includes(term)) {
+                matchCount++;
+                const safe = escapeHtml(entry.key);
+                const isChecked = modalSelection.has(entry.key);
+                const checkedAttr = isChecked ? ' checked' : '';
+                const activeClass = isChecked ? ' active' : '';
+                
+                htmlBuffer += `<div class="field-modal__item${activeClass}">
+                    <label>
+                        <input type="checkbox" value="${safe}"${checkedAttr}>
+                        <span>${safe}</span>
+                    </label>
+                    <em>${entry.count.toLocaleString()}</em>
+                </div>`;
+            }
+        }
+        
+        dom.fieldModalList.innerHTML = matchCount > 0 
+            ? htmlBuffer 
+            : '<p class="field-modal__empty">No matching numeric keys.</p>';
+    }
+
+    // --- Charting & Data Parsing Logic ---
+    function refreshChart() {
+        if (!dom.chartCard) return;
+        const hasRows = state.indexes.length > 0;
+        dom.chartCard.classList.toggle('hidden', !hasRows);
+        
+        if (!hasRows) {
+            state.availableFields = state.chartFields = [];
+            updateFieldSummary();
+            clearChart(false);
+            if (dom.chartReset) dom.chartReset.disabled = true;
+            if (dom.chartFieldTrigger) dom.chartFieldTrigger.disabled = true;
+            return;
+        }
+        
+        const fields = detectNumericFields();
+        state.availableFields = fields;
+        
+        if (!fields.length) {
+            if (dom.chartStatus) dom.chartStatus.textContent = 'No numeric fields detected.';
+            if (dom.chartFieldTrigger) dom.chartFieldTrigger.disabled = true;
+            state.chartFields = [];
+            updateFieldSummary();
+            clearChart(true);
+            return;
+        }
+        
+        if (dom.chartFieldTrigger) dom.chartFieldTrigger.disabled = false;
+        
+        const fieldNames = fields.map(e => e.key);
+        state.chartFields = state.chartFields.filter(f => fieldNames.includes(f));
+        if (!state.chartFields.length) {
+            state.chartFields = fieldNames.slice(0, Math.min(3, fieldNames.length));
+        }
+        state.chartFields = sortFieldsByAvailability(state.chartFields);
+        updateFieldSummary();
+        renderChartDatasets();
+    }
+
+    function detectNumericFields() {
+        const counts = new Map();
+        // Optimized loop
+        for (let i=0; i<state.indexes.length; i++) {
+            const flat = state.flatRecords[state.indexes[i]];
+            if (!flat) continue;
+            for (const key in flat) {
+                if (coerceNumeric(flat[key]) !== null) {
+                    counts.set(key, (counts.get(key) || 0) + 1);
+                }
+            }
+        }
+        return Array.from(counts.entries())
+            .map(([key, count]) => ({ key, count }))
+            .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+            .slice(0, 50); // Hard limit for rendering sanity
+    }
+
+    function renderChartDatasets() {
+        if (!dom.chartStatus) return;
+        if (!state.chartFields.length) {
+            dom.chartStatus.textContent = 'Select fields to plot.';
+            return clearChart(true);
+        }
+        
+        const datasets = buildDatasets(state.chartFields);
+        if (!datasets.length) {
+            dom.chartStatus.textContent = 'No valid timeseries data for selected fields.';
+            return clearChart(true);
+        }
+        
+        const chart = ensureChartInstance();
+        if (!chart) return;
+        
+        chart.data.datasets = datasets;
+        chart.update();
+        dom.chartStatus.textContent = 'Scroll / pinch to zoom • drag to pan.';
+        if (dom.chartReset) dom.chartReset.disabled = false;
+    }
+
+    function buildDatasets(fields) {
+        const datasets = [];
+        fields.forEach((field, index) => {
+            const data = [];
+            for(let i=0; i<state.indexes.length; i++) {
+                const recordIndex = state.indexes[i];
+                const flat = state.flatRecords[recordIndex];
+                if (!flat || !(field in flat)) continue;
+                
+                const val = coerceNumeric(flat[field]);
+                if (val === null) continue;
+                
+                const tsMeta = getTimestampMeta(recordIndex);
+                if (tsMeta.value !== null) {
+                    data.push({ x: tsMeta.value, y: val, tsLabel: tsMeta.label, recordIndex: recordIndex + 1 });
+                }
+            }
+            if (data.length) {
+                data.sort((a, b) => a.x - b.x);
+                const color = COLOR_PALETTE[index % COLOR_PALETTE.length];
+                datasets.push({
+                    label: field, data, borderColor: color, backgroundColor: 'transparent',
+                    pointBackgroundColor: color, pointBorderColor: '#0f172a', pointBorderWidth: 1,
+                    pointRadius: 3, pointHoverRadius: 5, tension: 0, spanGaps: true
+                });
+            }
+        });
+        return datasets;
+    }
+
+    function getTimestampMeta(recordIndex) {
+        const record = state.records[recordIndex];
+        let val = null;
+        for (const k of TIMESTAMP_KEYS) {
+            if (record && record[k] != null) { val = record[k]; break; }
+        }
+        
+        let numericVal = normalizeTimestampValue(val);
+        if (numericVal === null) {
+            const flat = state.flatRecords[recordIndex];
+            if (flat) {
+                for (const key in flat) {
+                    if (TIMESTAMP_KEY_PATTERN.test(key)) {
+                        numericVal = normalizeTimestampValue(flat[key]);
+                        if (numericVal !== null) break;
+                    }
+                }
+            }
+        }
+        return { 
+            value: numericVal, 
+            label: numericVal ? new Date(numericVal).toISOString() : '—' 
+        };
+    }
+
+    function normalizeTimestampValue(raw) {
+        if (raw == null) return null;
+        if (typeof raw === 'number') return raw > 1e12 ? raw : raw * 1000;
+        if (typeof raw === 'string' && raw.trim()) {
+            if (/^\d+(?:\.\d+)?$/.test(raw)) {
+                const num = Number(raw);
+                return num > 1e12 ? num : num * 1000;
+            }
+            const parsed = Date.parse(raw);
+            return isNaN(parsed) ? null : parsed;
+        }
+        return null;
+    }
+
+    function ensureChartInstance() {
+        if (state.chartInstance) return state.chartInstance;
+        if (!dom.chartCanvas || !window.Chart) return null;
+        
+        state.chartInstance = new Chart(dom.chartCanvas.getContext('2d'), {
+            type: 'line',
+            data: { datasets: [] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'nearest', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#f4f3ef' } },
+                    zoom: { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } }
+                },
+                scales: {
+                    x: { type: 'time', title: { display: true, text: 'Time', color: '#f4f3ef' }, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { title: { display: true, text: 'Value', color: '#f4f3ef' }, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            }
+        });
+        return state.chartInstance;
+    }
+
+    function clearChart(keepInstance = true) {
+        if (!state.chartInstance) return;
+        state.chartInstance.data.datasets = [];
+        state.chartInstance.update('none');
+        if (!keepInstance) { state.chartInstance.destroy(); state.chartInstance = null; }
+    }
+
+    // Highly optimized flattening logic
+    function flattenRecord(obj, prefix = '', res = {}) {
+        if (obj == null) return res;
+        if (typeof obj !== 'object') {
+            res[prefix] = obj;
+            return res;
+        }
+        if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) {
+                flattenRecord(obj[i], prefix ? `${prefix}[${i}]` : `[${i}]`, res);
+            }
+        } else {
+            for (const key in obj) {
+                flattenRecord(obj[key], prefix ? `${prefix}.${key}` : key, res);
+            }
+        }
+        return res;
+    }
+
+    function coerceNumeric(val) {
+        if (typeof val === 'number' && isFinite(val)) return val;
+        if (typeof val === 'string' && val.trim() && /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i.test(val)) {
+            const num = Number(val);
+            return isFinite(num) ? num : null;
+        }
+        return null;
+    }
+
+    // --- Export Utilities ---
+    function downloadRawFile() {
+        if (!state.rawText) return;
+        if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
+        state.blobUrl = URL.createObjectURL(new Blob([state.rawText], { type: 'application/x-ndjson' }));
+        triggerDownload(state.blobUrl, state.lastHeaders.filename || 'rds_export.jsonl');
+    }
+
+    function downloadCsv() {
+        if (!state.indexes.length) return setStatus('No rows to export.', true);
+        
+        const rows = state.indexes.map(idx => state.flatRecords[idx]);
+        const headerSet = new Set();
+        rows.forEach(r => Object.keys(r).forEach(k => headerSet.add(k)));
+        const headers = Array.from(headerSet);
+        
+        let csv = headers.map(csvEscape).join(',') + '\n';
+        for(let i=0; i<rows.length; i++) {
+            const row = rows[i];
+            csv += headers.map(h => csvEscape(row[h])).join(',') + '\n';
+        }
+        
+        if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
+        state.csvUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        
+        const base = (state.lastHeaders.filename || 'export').replace(/\.(jsonl|ndjson|json)$/i, '');
+        triggerDownload(state.csvUrl, `${base}.csv`);
+    }
+
+    function triggerDownload(url, filename) {
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+
+    function csvEscape(raw) {
+        if (raw == null) return '';
+        const txt = String(raw);
+        return /[",\n\r]/.test(txt) ? `"${txt.replace(/"/g, '""')}"` : txt;
+    }
+
+    function escapeHtml(text) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function sortFieldsByAvailability(fields) {
+        if (!state.availableFields.length) return fields;
+        const order = new Map(state.availableFields.map((e, i) => [e.key, i]));
+        return fields.slice().sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+    }
+
+    function updateFieldSummary() {
+        if (!dom.chartFieldLabel) return;
+        if (!state.availableFields.length) return dom.chartFieldLabel.textContent = 'No fields detected.';
+        if (!state.chartFields.length) return dom.chartFieldLabel.textContent = 'Nothing selected.';
+        
+        const top = state.chartFields.slice(0, 3).join(', ');
+        dom.chartFieldLabel.textContent = state.chartFields.length > 3 ? `${top} +${state.chartFields.length - 3} more` : top;
+    }
+
+    function parseFilename(dispo) {
+        const match = dispo && /filename\*?=([^;]+)/i.exec(dispo);
+        return match ? match[1].trim().replace(/["']/g, '').replace(/^UTF-8/i, '') : null;
+    }
+
+    function handleChartReset() { state.chartInstance?.resetZoom?.(); }
+
+    function registerChartPlugins() {
+        const plugin = window.ChartZoom || window.chartjsPluginZoom || window['chartjs-plugin-zoom'];
+        if (plugin?.id || plugin?.default) window.Chart?.register(plugin.id ? plugin : plugin.default);
+    }
+
+    function resetData(hideCards) {
+        state.records = state.indexes = state.flatRecords = state.chartFields = state.availableFields = [];
+        state.rawText = ''; state.currentPage = 1; state.activeRecordIndex = -1;
+        modalSelection.clear();
+        closeFieldModal();
+        clearChart(false);
+        if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
+        if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
+        
+        dom.tableBody.innerHTML = `<tr><td colspan="${TABLE_COLUMN_COUNT}">No data loaded yet.</td></tr>`;
+        dom.preview.textContent = '// Select a row to inspect payload';
+        dom.summaryCard.classList.toggle('hidden', hideCards);
+        dom.tableCard.classList.toggle('hidden', hideCards);
+        dom.downloadBtn.disabled = dom.csvBtn.disabled = true;
+        
+        if (dom.paginationControls) dom.paginationControls.classList.add('hidden');
+        if (dom.chartCard) dom.chartCard.classList.add('hidden');
+    }
+
+    init();
+})();
+</script>
+</body>
+</html>
