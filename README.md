@@ -33,6 +33,7 @@ If CORS is not configured, your browser will block the tool from fetching data. 
 Access-Control-Allow-Origin: * (Or specify your exact GitHub Pages URL)
 Access-Control-Allow-Methods: POST, OPTIONS
 Access-Control-Allow-Headers: Content-Type, Accept
+```
 
 ## 🐛 Known Limitations
 Large Dataset Freezing: Currently, processing massive datasets (e.g., querying 3+ days of telemetry data at once) happens synchronously on the browser's main thread. This may cause the browser window to temporarily freeze or crash.
