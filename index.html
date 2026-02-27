@@ -23,7 +23,6 @@
 
         * { box-sizing: border-box; }
 
-        /* Accessibility & Scrollbars */
         :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 2px; }
         
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -135,25 +134,6 @@
         }
         .chip-btn:hover:not(:disabled) { border-color: rgba(16, 185, 129, 0.65); background: rgba(16, 185, 129, 0.1); }
 
-        .month-box {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.6rem;
-            padding: 0.5rem 0.9rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px;
-            background: rgba(255, 255, 255, 0.04);
-        }
-        .month-box input[type="number"] {
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            background: rgba(255, 255, 255, 0.05);
-            color: #fefefe;
-            border-radius: 10px;
-            padding: 0.3rem 0.6rem;
-            width: 70px;
-            font-size: 0.85rem;
-        }
-
         .action-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; }
 
         button.primary, button.accent, button.ghost {
@@ -180,7 +160,6 @@
         .spinner { animation: spin 1s linear infinite; width: 1.15rem; height: 1.15rem; margin-right: 0.5rem; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
-        /* Modern Toast Notification */
         .toast {
             position: fixed;
             bottom: 2rem;
@@ -233,7 +212,6 @@
         .chart-status { margin: 0.8rem 0 1rem; font-size: 0.85rem; color: rgba(244, 243, 239, 0.75); }
         .chart-canvas-wrap { position: relative; min-height: 320px; }
 
-        /* Native Dialog styling */
         dialog.field-modal {
             padding: 0;
             border: none;
@@ -393,13 +371,7 @@
         <button type="button" class="chip-btn" data-range-minutes="60">1 hr</button>
         <button type="button" class="chip-btn" data-range-minutes="360">6 hr</button>
         <button type="button" class="chip-btn" data-range-minutes="720">12 hr</button>
-        <button type="button" class="chip-btn" data-range-minutes="4320">3 day</button>
-        <button type="button" class="chip-btn" data-range-minutes="10080">7 day</button>
-        <div class="month-box">
-            <span style="font-size: 0.7rem; margin-right: 0.2rem;">Month</span>
-            <input id="month-count" type="number" min="1" max="12" value="1" step="1" aria-label="Number of months">
-            <button type="button" class="chip-btn" data-range-months="month-count" style="margin-left: 0.3rem;">Apply</button>
-        </div>
+        <button type="button" class="chip-btn" data-range-minutes="1440">1 day</button>
     </div>
 
     <div class="action-row">
@@ -463,7 +435,7 @@
             </div>
             <p class="field-modal__intro">Select the data points you want to visualize on the timeline. Only keys containing numeric data are shown.</p>
             <div class="field-modal__search">
-                <input id="field-modal-search" type="search" placeholder="Search paths (e.g. pack.voltage)">
+                <input id="field-modal-search" type="search" placeholder="Search paths (e.g. pack_v)">
                 <button type="button" class="chip-btn" id="field-modal-select-all">Select All</button>
                 <button type="button" class="chip-btn" id="field-modal-select-none">Clear All</button>
             </div>
@@ -481,7 +453,7 @@
     <section id="table-card" class="table-card hidden">
         <div class="table-header">
             <h2>Parsed Records</h2>
-            <input id="table-filter" type="search" placeholder="Filter payloads (e.g. voltage>4.1)">
+            <input id="table-filter" type="search" placeholder="Filter payloads (e.g. pack_v > 23)">
         </div>
         <div class="table-wrapper">
             <table id="records-table">
@@ -542,8 +514,7 @@
         pageSize: 50
     };
 
-    let modalSelection = new Set();
-    let filterTimer = null;
+    let filterAborter = null;
     let toastTimeout = null;
 
     const dom = {
@@ -552,8 +523,6 @@
         toInput: document.getElementById('to-datetime'),
         nowButtons: document.querySelectorAll('[data-now-target]'),
         rangeButtons: document.querySelectorAll('[data-range-minutes]'),
-        monthInput: document.getElementById('month-count'),
-        monthButton: document.querySelector('[data-range-months]'),
         fetchBtn: document.getElementById('fetch-btn'),
         downloadBtn: document.getElementById('download-btn'),
         csvBtn: document.getElementById('csv-btn'),
@@ -578,7 +547,6 @@
         chartFieldTrigger: document.getElementById('chart-field-trigger'),
         chartFieldLabel: document.getElementById('chart-field-label'),
         
-        // Native Dialog
         fieldModal: document.getElementById('field-modal'),
         fieldModalList: document.getElementById('field-modal-list'),
         fieldModalSearch: document.getElementById('field-modal-search'),
@@ -597,15 +565,15 @@
         
         dom.nowButtons.forEach(btn => btn.addEventListener('click', handleNowClick));
         dom.rangeButtons.forEach(btn => btn.addEventListener('click', handleRangeClick));
-        dom.monthButton?.addEventListener('click', handleMonthRangeClick);
         dom.fetchBtn.addEventListener('click', fetchLogs);
         dom.downloadBtn.addEventListener('click', downloadRawFile);
         dom.csvBtn.addEventListener('click', downloadCsv);
         
-        // Increased debounce for text filter logic optimization
+        // Debounce filter with AbortController for async safety
+        let filterTimer;
         dom.tableFilter.addEventListener('input', () => {
             window.clearTimeout(filterTimer);
-            filterTimer = window.setTimeout(applyFilter, 300);
+            filterTimer = window.setTimeout(() => applyFilter(false), 300);
         });
         
         dom.tableBody.addEventListener('click', handleRowClick);
@@ -623,7 +591,6 @@
         dom.fieldModalSelectAll?.addEventListener('click', handleSelectAllFields);
         dom.fieldModalSelectNone?.addEventListener('click', handleSelectNoneFields);
         
-        // Native dialog backdrop click close support
         dom.fieldModal?.addEventListener('click', (e) => {
             if (e.target === dom.fieldModal) closeFieldModal();
         });
@@ -649,18 +616,6 @@
         dom.toInput.value = toLocalInput(now);
         dom.fromInput.value = toLocalInput(from);
         setStatus(`Range set to ${event.currentTarget.textContent.trim()}.`, false, 3000);
-    }
-
-    function handleMonthRangeClick() {
-        if (!dom.monthInput) return;
-        const months = Number(dom.monthInput.value);
-        if (!months || months <= 0) return setStatus('Enter a positive month count.', true);
-        const now = new Date();
-        const from = new Date(now);
-        from.setMonth(from.getMonth() - months);
-        dom.toInput.value = toLocalInput(now);
-        dom.fromInput.value = toLocalInput(from);
-        setStatus(`Range set to last ${months} month(s).`, false, 3000);
     }
 
     function setDefaultDates() {
@@ -698,11 +653,16 @@
     }
 
     function setInputsDisabled(disabled) {
-        [dom.thingInput, dom.fromInput, dom.toInput, dom.monthInput, dom.tableFilter]
+        [dom.thingInput, dom.fromInput, dom.toInput, dom.tableFilter]
             .forEach(el => el && (el.disabled = disabled));
         dom.nowButtons.forEach(btn => btn.disabled = disabled);
         dom.rangeButtons.forEach(btn => btn.disabled = disabled);
-        if (dom.monthButton) dom.monthButton.disabled = disabled;
+    }
+
+    function registerChartPlugins() {
+        if (window.Chart && window.ChartDataLabels) {
+            // ChartDataLabels plugin registration logic can go here if needed later
+        }
     }
 
     // --- API & Data Handling ---
@@ -713,9 +673,12 @@
         try {
             const thingName = dom.thingInput?.value?.trim();
             if (!thingName) throw new Error('Provide a thing name.');
+            
             const fromIso = toIso(dom.fromInput.value);
             const toIsoVal = toIso(dom.toInput.value);
+            
             if (!fromIso || !toIsoVal) throw new Error('Provide a valid date range.');
+            if (new Date(fromIso) >= new Date(toIsoVal)) throw new Error('"From" date must be earlier than "To" date.');
             
             const toDateWithPadding = new Date(toIsoVal);
             toDateWithPadding.setHours(toDateWithPadding.getHours() + 1);
@@ -742,7 +705,9 @@
                 throw new Error(errBody.error || `Request failed (${response.status})`);
             }
             
-            ingestNdjson(await response.text(), response.headers);
+            const text = await response.text();
+            await ingestNdjsonAsync(text, response.headers);
+            
         } catch (error) {
             setStatus(error.message || 'Failed to fetch logs.', true);
         } finally {
@@ -757,7 +722,8 @@
         return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
     }
 
-    function ingestNdjson(text, headers) {
+    // Asynchronous Chunking to prevent main-thread freeze
+    async function ingestNdjsonAsync(text, headers) {
         state.rawText = text;
         if (state.blobUrl) URL.revokeObjectURL(state.blobUrl);
         if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
@@ -765,16 +731,27 @@
         
         const lines = text.split(/\r?\n/).filter(Boolean);
         const parsed = [];
+        const flat = [];
         let skipped = 0;
         
-        // Fast iteration
-        for (let i = 0; i < lines.length; i++) {
-            try { parsed.push(JSON.parse(lines[i])); } 
-            catch { skipped++; }
+        const CHUNK_SIZE = 2500; // Process 2500 lines before yielding
+        for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
+            const end = Math.min(i + CHUNK_SIZE, lines.length);
+            for (let j = i; j < end; j++) {
+                try { 
+                    const obj = JSON.parse(lines[j]);
+                    parsed.push(obj); 
+                    flat.push(flattenRecord(obj));
+                } catch { 
+                    skipped++; 
+                }
+            }
+            setStatus(`Parsing records... ${Math.round((end / lines.length) * 100)}%`, false, 0);
+            await new Promise(r => setTimeout(r, 0)); // Yield to main thread
         }
         
         state.records = parsed;
-        state.flatRecords = parsed.map(flattenRecord);
+        state.flatRecords = flat;
         state.chartFields = [];
         state.availableFields = [];
         if (dom.chartFieldTrigger) dom.chartFieldTrigger.disabled = true;
@@ -795,7 +772,7 @@
         dom.tableCard.classList.toggle('hidden', !hasData);
         dom.downloadBtn.disabled = dom.csvBtn.disabled = !hasData;
         
-        applyFilter(true);
+        await applyFilter(true);
         updatePreview();
         
         const summaryText = hasData ? `Fetched ${parsed.length} records.` : 'No records found.';
@@ -804,19 +781,65 @@
     }
 
     // --- Table & Rendering Optimizations ---
-    function applyFilter(skipStatus = false) {
+    async function applyFilter(skipStatus = false) {
+        if (filterAborter) filterAborter.abort();
+        filterAborter = new AbortController();
+        const signal = filterAborter.signal;
+
         const term = dom.tableFilter.value.trim().toLowerCase();
         
         if (!term) {
             state.indexes = state.records.map((_, idx) => idx);
         } else {
-            // Optimized array reduction
+            dom.tableBody.innerHTML = `<tr><td colspan="${TABLE_COLUMN_COUNT}" style="text-align:center; padding: 2rem;"><svg class="spinner" style="color:var(--primary);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Filtering...</td></tr>`;
+            
             const filtered = [];
-            for (let i = 0; i < state.records.length; i++) {
-                if (JSON.stringify(state.records[i]).toLowerCase().includes(term)) {
-                    filtered.push(i);
+            const CHUNK_SIZE = 3000;
+            
+            // Regex to detect math operations: fieldName > 12.5
+            const mathMatch = term.match(/^([a-z0-9_.]+)\s*(>=|<=|>|<|=|==)\s*(-?\d+(?:\.\d+)?)$/);
+            
+            for (let i = 0; i < state.records.length; i += CHUNK_SIZE) {
+                if (signal.aborted) return;
+                const end = Math.min(i + CHUNK_SIZE, state.records.length);
+                
+                for (let j = i; j < end; j++) {
+                    if (mathMatch) {
+                        // Mathematical Filtering
+                        const field = mathMatch[1];
+                        const op = mathMatch[2];
+                        const val = parseFloat(mathMatch[3]);
+                        const flat = state.flatRecords[j];
+                        
+                        let recordVal = null;
+                        // Allow shorthand (e.g. "pack_v" instead of "payload.pack_v")
+                        for (const k in flat) {
+                            if (k.toLowerCase() === field || k.toLowerCase().endsWith('.' + field)) {
+                                recordVal = parseFloat(flat[k]);
+                                break;
+                            }
+                        }
+                        
+                        if (recordVal !== null && !isNaN(recordVal)) {
+                            let passes = false;
+                            if (op === '>') passes = recordVal > val;
+                            else if (op === '<') passes = recordVal < val;
+                            else if (op === '>=') passes = recordVal >= val;
+                            else if (op === '<=') passes = recordVal <= val;
+                            else if (op === '=' || op === '==') passes = recordVal === val;
+                            
+                            if (passes) filtered.push(j);
+                        }
+                    } else {
+                        // Standard Text Searching
+                        if (JSON.stringify(state.records[j]).toLowerCase().includes(term)) {
+                            filtered.push(j);
+                        }
+                    }
                 }
+                await new Promise(r => setTimeout(r, 0)); // Yield
             }
+            if (signal.aborted) return;
             state.indexes = filtered;
         }
         
@@ -827,7 +850,7 @@
         renderSummary();
         renderTable();
         updatePreview();
-        refreshChart();
+        await refreshChart();
         
         if (!skipStatus && term) setStatus(`Showing ${state.indexes.length} record(s).`, false, 2000);
     }
@@ -850,7 +873,6 @@
         const startIdx = (state.currentPage - 1) * state.pageSize;
         const pageIndexes = state.indexes.slice(startIdx, startIdx + state.pageSize);
 
-        // String concatenation is generally faster than DOM creation loop for large innerHTML
         let htmlBuffer = '';
         for(let i=0; i<pageIndexes.length; i++) {
             const idx = pageIndexes[i];
@@ -891,7 +913,6 @@
         if (!row) return;
         state.activeRecordIndex = Number(row.dataset.recordIndex);
         
-        // Optimize highlight change without re-rendering entire table
         dom.tableBody.querySelectorAll('tr.selected').forEach(el => el.classList.remove('selected'));
         row.classList.add('selected');
         
@@ -905,18 +926,19 @@
     }
 
     // --- Modal Configuration Optimizations ---
+    let modalSelection = new Set();
     function openFieldModal() {
         if (!dom.fieldModal || !state.availableFields.length) return;
         modalSelection = new Set(state.chartFields);
         if (dom.fieldModalSearch) dom.fieldModalSearch.value = '';
         renderFieldModalList('');
         updateModalCounter();
-        dom.fieldModal.showModal(); // Native Dialog API
+        dom.fieldModal.showModal(); 
     }
 
     function closeFieldModal() {
         if (!dom.fieldModal) return;
-        dom.fieldModal.close(); // Native Dialog API
+        dom.fieldModal.close();
         modalSelection.clear();
     }
 
@@ -995,7 +1017,7 @@
     }
 
     // --- Charting & Data Parsing Logic ---
-    function refreshChart() {
+    async function refreshChart() {
         if (!dom.chartCard) return;
         const hasRows = state.indexes.length > 0;
         dom.chartCard.classList.toggle('hidden', !hasRows);
@@ -1009,7 +1031,8 @@
             return;
         }
         
-        const fields = detectNumericFields();
+        if (dom.chartStatus) dom.chartStatus.textContent = 'Analyzing fields...';
+        const fields = await detectNumericFieldsAsync();
         state.availableFields = fields;
         
         if (!fields.length) {
@@ -1033,22 +1056,26 @@
         renderChartDatasets();
     }
 
-    function detectNumericFields() {
+    async function detectNumericFieldsAsync() {
         const counts = new Map();
-        // Optimized loop
-        for (let i=0; i<state.indexes.length; i++) {
-            const flat = state.flatRecords[state.indexes[i]];
-            if (!flat) continue;
-            for (const key in flat) {
-                if (coerceNumeric(flat[key]) !== null) {
-                    counts.set(key, (counts.get(key) || 0) + 1);
+        const CHUNK_SIZE = 5000;
+        for (let i=0; i<state.indexes.length; i+=CHUNK_SIZE) {
+            const end = Math.min(i + CHUNK_SIZE, state.indexes.length);
+            for (let j = i; j < end; j++) {
+                const flat = state.flatRecords[state.indexes[j]];
+                if (!flat) continue;
+                for (const key in flat) {
+                    if (coerceNumeric(flat[key]) !== null) {
+                        counts.set(key, (counts.get(key) || 0) + 1);
+                    }
                 }
             }
+            await new Promise(r => setTimeout(r, 0)); // Yield
         }
         return Array.from(counts.entries())
             .map(([key, count]) => ({ key, count }))
             .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-            .slice(0, 50); // Hard limit for rendering sanity
+            .slice(0, 50);
     }
 
     function renderChartDatasets() {
@@ -1172,7 +1199,6 @@
         if (!keepInstance) { state.chartInstance.destroy(); state.chartInstance = null; }
     }
 
-    // Highly optimized flattening logic
     function flattenRecord(obj, prefix = '', res = {}) {
         if (obj == null) return res;
         if (typeof obj !== 'object') {
@@ -1208,25 +1234,40 @@
         triggerDownload(state.blobUrl, state.lastHeaders.filename || 'rds_export.jsonl');
     }
 
-    function downloadCsv() {
+    // Async CSV Export
+    async function downloadCsv() {
         if (!state.indexes.length) return setStatus('No rows to export.', true);
+        toggleButton(dom.csvBtn, true, 'Building CSV...');
         
-        const rows = state.indexes.map(idx => state.flatRecords[idx]);
-        const headerSet = new Set();
-        rows.forEach(r => Object.keys(r).forEach(k => headerSet.add(k)));
-        const headers = Array.from(headerSet);
-        
-        let csv = headers.map(csvEscape).join(',') + '\n';
-        for(let i=0; i<rows.length; i++) {
-            const row = rows[i];
-            csv += headers.map(h => csvEscape(row[h])).join(',') + '\n';
+        try {
+            const rows = state.indexes.map(idx => state.flatRecords[idx]);
+            const headerSet = new Set();
+            rows.forEach(r => Object.keys(r).forEach(k => headerSet.add(k)));
+            const headers = Array.from(headerSet);
+            
+            const chunks = [headers.map(csvEscape).join(',') + '\n'];
+            const CHUNK_SIZE = 5000;
+            
+            for(let i=0; i<rows.length; i+=CHUNK_SIZE) {
+                let chunkStr = '';
+                const end = Math.min(i + CHUNK_SIZE, rows.length);
+                for (let j = i; j < end; j++) {
+                    chunkStr += headers.map(h => csvEscape(rows[j][h])).join(',') + '\n';
+                }
+                chunks.push(chunkStr);
+                await new Promise(r => setTimeout(r, 0)); // Yield
+            }
+            
+            if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
+            state.csvUrl = URL.createObjectURL(new Blob(chunks, { type: 'text/csv' }));
+            
+            const base = (state.lastHeaders.filename || 'export').replace(/\.(jsonl|ndjson|json)$/i, '');
+            triggerDownload(state.csvUrl, `${base}.csv`);
+        } catch (error) {
+            setStatus('Failed to generate CSV.', true);
+        } finally {
+            toggleButton(dom.csvBtn, false);
         }
-        
-        if (state.csvUrl) URL.revokeObjectURL(state.csvUrl);
-        state.csvUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        
-        const base = (state.lastHeaders.filename || 'export').replace(/\.(jsonl|ndjson|json)$/i, '');
-        triggerDownload(state.csvUrl, `${base}.csv`);
     }
 
     function triggerDownload(url, filename) {
@@ -1263,17 +1304,13 @@
 
     function parseFilename(dispo) {
         const match = dispo && /filename\*?=([^;]+)/i.exec(dispo);
-        return match ? match[1].trim().replace(/["']/g, '').replace(/^UTF-8/i, '') : null;
+        return match ? match[1].trim().replace(/["']/g, '').replace(/^UTF-8''/i, '') : null;
     }
 
     function handleChartReset() { state.chartInstance?.resetZoom?.(); }
 
-    function registerChartPlugins() {
-        const plugin = window.ChartZoom || window.chartjsPluginZoom || window['chartjs-plugin-zoom'];
-        if (plugin?.id || plugin?.default) window.Chart?.register(plugin.id ? plugin : plugin.default);
-    }
-
     function resetData(hideCards) {
+        if (filterAborter) filterAborter.abort();
         state.records = state.indexes = state.flatRecords = state.chartFields = state.availableFields = [];
         state.rawText = ''; state.currentPage = 1; state.activeRecordIndex = -1;
         modalSelection.clear();
